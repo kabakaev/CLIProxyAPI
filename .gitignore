@@ -29,6 +29,7 @@ auths/*
 
 # Documentation
 docs/*
+!docs/telemetry.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md
@@ -43,6 +44,10 @@ GEMINI.md
 .agent/*
 .agents
 .agents/*
+!.agents/
+!.agents/skills/
+!.agents/skills/otel-dev-loop/
+!.agents/skills/otel-dev-loop/SKILL.md
 .opencode/*
 .idea/*
 .beads/*

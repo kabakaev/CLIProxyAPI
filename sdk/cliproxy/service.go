@@ -19,6 +19,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/telemetry"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/diff"
@@ -102,6 +103,8 @@ type Service struct {
 
 	// wsGateway manages websocket Gemini providers.
 	wsGateway *wsrelay.Manager
+
+	telemetry *telemetry.Provider
 
 	homeClient       *home.Client
 	homeCancel       context.CancelFunc
@@ -1437,6 +1440,15 @@ func (s *Service) Run(ctx context.Context) error {
 
 	s.applyRetryConfig(s.cfg)
 
+	telemetryProvider, errTelemetry := telemetry.NewProvider(ctx, s.cfg.Telemetry)
+	if errTelemetry != nil {
+		return fmt.Errorf("cliproxy: failed to initialize telemetry: %w", errTelemetry)
+	}
+	s.telemetry = telemetryProvider
+	if telemetryProvider != nil {
+		s.serverOptions = append([]api.ServerOption{api.WithMiddleware(telemetryProvider.Middleware())}, s.serverOptions...)
+	}
+
 	s.registerPluginAuthParser()
 	if s.coreManager != nil && !homeEnabled {
 		if errLoad := s.coreManager.Load(ctx); errLoad != nil {
@@ -1651,6 +1663,10 @@ func (s *Service) Shutdown(ctx context.Context) error {
 					shutdownErr = err
 				}
 			}
+		}
+		if s.telemetry != nil {
+			s.telemetry.Shutdown(ctx)
+			s.telemetry = nil
 		}
 
 		if s.pluginHost != nil {
