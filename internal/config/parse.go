@@ -86,5 +86,7 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 	cfg.SanitizeOAuthModelAlias()
 	cfg.SanitizePayloadRules()
 
+	applyRemoteManagementEnv(&cfg)
+
 	return &cfg, nil
 }

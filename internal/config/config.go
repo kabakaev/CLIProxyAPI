@@ -344,6 +344,15 @@ type RemoteManagement struct {
 	// PanelGitHubRepository overrides the GitHub repository used to fetch the management panel asset.
 	// Accepts either a repository URL (https://github.com/org/repo) or an API releases endpoint.
 	PanelGitHubRepository string `yaml:"panel-github-repository"`
+	// TrustedHeaderAuth configures trusted reverse-proxy authentication.
+	TrustedHeaderAuth TrustedHeaderAuth `yaml:"trusted-header-auth"`
+}
+
+// TrustedHeaderAuth configures trusted reverse-proxy authentication contract.
+type TrustedHeaderAuth struct {
+	Enabled        bool     `yaml:"enabled" json:"enabled"`
+	UserIDHeader   string   `yaml:"user-id-header" json:"user-id-header"`
+	TrustedProxies []string `yaml:"trusted-proxies" json:"trusted-proxies"`
 }
 
 // QuotaExceeded defines the behavior when API quota limits are exceeded.
@@ -820,6 +829,8 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		return nil, errNormalizeTelemetry
 	}
 
+	applyRemoteManagementEnv(&cfg)
+
 	// Return the populated configuration struct.
 	return &cfg, nil
 }
@@ -921,6 +932,53 @@ func applyTelemetryEnv(t *TelemetryConfig) {
 	setString("CLIPROXY_TELEMETRY_OTLP_PATH", &t.OTLP.PathPrefix)
 	setBool("CLIPROXY_TELEMETRY_OTLP_INSECURE", &t.OTLP.Insecure)
 	setBool("CLIPROXY_TELEMETRY_PAYLOAD_CAPTURE_ENABLED", &t.PayloadCapture.Enabled)
+}
+
+func applyRemoteManagementEnv(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if val, ok := os.LookupEnv("CLIPROXYAPI_TRUSTED_HEADER_AUTH_ENABLED"); ok {
+		switch strings.ToLower(strings.TrimSpace(val)) {
+		case "1", "true", "yes", "y", "on":
+			cfg.RemoteManagement.TrustedHeaderAuth.Enabled = true
+		case "0", "false", "no", "n", "off":
+			cfg.RemoteManagement.TrustedHeaderAuth.Enabled = false
+		}
+	}
+	if val, ok := os.LookupEnv("CLIPROXYAPI_TRUSTED_USER_ID_HEADER"); ok {
+		cfg.RemoteManagement.TrustedHeaderAuth.UserIDHeader = strings.TrimSpace(val)
+	}
+	if val, ok := os.LookupEnv("CLIPROXYAPI_TRUSTED_HEADER_AUTH_PROXIES"); ok {
+		trimmed := strings.TrimSpace(val)
+		if trimmed != "" {
+			parts := strings.Split(trimmed, ",")
+			proxies := make([]string, 0, len(parts))
+			for _, part := range parts {
+				p := strings.TrimSpace(part)
+				if p != "" {
+					proxies = append(proxies, p)
+				}
+			}
+			cfg.RemoteManagement.TrustedHeaderAuth.TrustedProxies = proxies
+		}
+	}
+
+	// Normalize defaults
+	if cfg.RemoteManagement.TrustedHeaderAuth.Enabled {
+		cfg.RemoteManagement.TrustedHeaderAuth.UserIDHeader = strings.TrimSpace(cfg.RemoteManagement.TrustedHeaderAuth.UserIDHeader)
+		if cfg.RemoteManagement.TrustedHeaderAuth.UserIDHeader == "" {
+			cfg.RemoteManagement.TrustedHeaderAuth.UserIDHeader = "X-User-UUID"
+		}
+	}
+	cleanedProxies := make([]string, 0, len(cfg.RemoteManagement.TrustedHeaderAuth.TrustedProxies))
+	for _, p := range cfg.RemoteManagement.TrustedHeaderAuth.TrustedProxies {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			cleanedProxies = append(cleanedProxies, p)
+		}
+	}
+	cfg.RemoteManagement.TrustedHeaderAuth.TrustedProxies = cleanedProxies
 }
 
 // NormalizePluginsConfig applies default plugin configuration values.
