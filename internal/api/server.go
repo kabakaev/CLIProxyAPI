@@ -883,7 +883,58 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
+	if cfg.RemoteManagement.TrustedHeaderAuth.Enabled {
+		contents, errReadFile := os.ReadFile(filePath)
+		if errReadFile != nil {
+			log.WithError(errReadFile).Error("failed to read management control panel asset")
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", injectTrustedHeaderBootstrap(contents))
+		return
+	}
+
 	c.File(filePath)
+}
+
+func injectTrustedHeaderBootstrap(contents []byte) []byte {
+	const marker = "cliproxy-trusted-header-bootstrap"
+	if len(contents) == 0 || strings.Contains(string(contents), marker) {
+		return contents
+	}
+
+	const bootstrap = `    <script id="cliproxy-trusted-header-bootstrap">
+      (function () {
+        try {
+          var origin = window.location.origin;
+          localStorage.setItem("isLoggedIn", "true");
+          localStorage.setItem("apiBase", origin);
+          localStorage.setItem("managementKey", "trusted-header");
+        } catch (err) {
+          console.warn("Trusted-header management bootstrap failed", err);
+        }
+      })();
+    </script>
+`
+	const moduleScript = `<script type="module"`
+	if idx := strings.Index(string(contents), moduleScript); idx >= 0 {
+		out := make([]byte, 0, len(contents)+len(bootstrap))
+		out = append(out, contents[:idx]...)
+		out = append(out, bootstrap...)
+		out = append(out, contents[idx:]...)
+		return out
+	}
+
+	const headEnd = `</head>`
+	if idx := strings.Index(string(contents), headEnd); idx >= 0 {
+		out := make([]byte, 0, len(contents)+len(bootstrap))
+		out = append(out, contents[:idx]...)
+		out = append(out, bootstrap...)
+		out = append(out, contents[idx:]...)
+		return out
+	}
+
+	return contents
 }
 
 func (s *Server) enableKeepAlive(timeout time.Duration, onTimeout func()) {
